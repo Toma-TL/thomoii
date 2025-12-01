@@ -1,0 +1,12 @@
+/* Reset des marges et hauteur pour que la carte occupe tout l'écran */
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+}
+
+/* Div qui contiendra la carte */
+#map {
+    width: 100%;
+    height: 100%;
+}
