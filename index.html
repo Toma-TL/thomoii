@@ -1,15 +1,165 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>Carte Thomoii</title>
-<link href="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.css" rel="stylesheet" />
-<link rel="stylesheet" href="style.css"> <!-- CSS séparé -->
+  <meta charset="utf-8" />
+  <title>Stations essence Rennes (10 km)</title>
+
+  <link href="https://unpkg.com/maplibre-gl@3.3.1/dist/maplibre-gl.css" rel="stylesheet"/>
+  <script src="https://unpkg.com/maplibre-gl@3.3.1/dist/maplibre-gl.js"></script>
+
+  <style>
+    body, html { margin: 0; padding: 0; height: 100%; width: 100%; }
+    #map { height: 100%; width: 100%; }
+
+    /* Bandeau des sources */
+    #sources {
+      position: absolute;
+      bottom: 5px;
+      right: 10px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      padding: 6px 10px;
+      font-size: 12px;
+      border-radius: 4px;
+      font-family: sans-serif;
+      z-index: 999;
+    }
+  </style>
 </head>
 <body>
-<div id="map"></div>
 
-<script src="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.js"></script>
-<script src="script.js"></script> <!-- JS séparé -->
+  <div id="map"></div>
+
+  <!-- Affichage des sources -->
+  <div id="sources">
+    Fond : © MapTiler — Données carburants : © data.economie.gouv.fr
+  </div>
+
+  <script>
+    const map = new maplibregl.Map({
+      container: "map",
+      style: { version: 8, sources: {}, layers: [] },
+      center: [-1.6778, 48.1173], // Rennes
+      zoom: 12
+    });
+
+    map.addControl(new maplibregl.NavigationControl());
+
+    // Distance en km entre deux points
+    function distanceKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2)**2 +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon/2)**2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    async function fetchAllStations() {
+      let start = 0;
+      let allStations = [];
+      let more = true;
+
+      while (more) {
+        const res = await fetch(`https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/prix-des-carburants-en-france-flux-instantane-v2/records?where=code_departement='35'&limit=100&start=${start}`);
+        const data = await res.json();
+        allStations = allStations.concat(data.results);
+        start += 100;
+        more = start < data.total_count;
+      }
+      return allStations;
+    }
+
+    map.on("style.load", async () => {
+
+      map.addSource("raster-background", {
+        type: "raster",
+        tiles: ["https://api.maptiler.com/maps/dataviz-dark/{z}/{x}/{y}.png?key=xX6tlHbHqnG4ROor79FN"],
+        tileSize: 256,
+        attribution: "© Maptiler"
+      });
+
+      map.addLayer({
+        id: "Fond raster Maptiler",
+        type: "raster",
+        source: "raster-background"
+      });
+
+      const stations = await fetchAllStations();
+
+      const rennesLat = 48.1173;
+      const rennesLon = -1.6778;
+
+      const stationsGeojson = {
+        type: "FeatureCollection",
+        features: stations
+          .filter(r => r.latitude && r.longitude)
+          .map(r => ({
+            r,
+            lon: parseFloat(r.longitude) / 100000,
+            lat: parseFloat(r.latitude) / 100000
+          }))
+          .filter(d => distanceKm(d.lat, d.lon, rennesLat, rennesLon) <= 10)
+          .map(d => ({
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [d.lon, d.lat] },
+            properties: {
+              name: d.r.adresse,
+              ville: d.r.ville,
+              gazole: d.r.gazole_prix,
+              sp95: d.r.sp95_prix,
+              e10: d.r.e10_prix,
+              e85: d.r.e85_prix,
+              sp98: d.r.sp98_prix,
+              gplc: d.r.gplc_prix
+            }
+          }))
+      };
+
+      map.addSource("stations", {
+        type: "geojson",
+        data: stationsGeojson
+      });
+
+      map.addLayer({
+        id: "stations-points",
+        type: "circle",
+        source: "stations",
+        paint: {
+          "circle-radius": 6,
+          "circle-color": [
+            "interpolate",
+            ["linear"],
+            ["get", "gazole"],
+            1.4, "#00ff00",
+            2.0, "#ff0000"
+          ],
+          "circle-stroke-width": 1,
+          "circle-stroke-color": "#fff"
+        }
+      });
+
+      map.on("click", "stations-points", e => {
+        const p = e.features[0].properties;
+        new maplibregl.Popup()
+          .setLngLat(e.lngLat)
+          .setHTML(`
+            <strong>${p.name}</strong><br>${p.ville}<br>
+            Gazole: ${p.gazole ?? "N/A"} €<br>
+            SP95: ${p.sp95 ?? "N/A"} €<br>
+            E10: ${p.e10 ?? "N/A"} €<br>
+            E85: ${p.e85 ?? "N/A"} €<br>
+            SP98: ${p.sp98 ?? "N/A"} €<br>
+            GPLc: ${p.gplc ?? "N/A"} €
+          `)
+          .addTo(map);
+      });
+
+      map.on("mouseenter", "stations-points", () => map.getCanvas().style.cursor = "pointer");
+      map.on("mouseleave", "stations-points", () => map.getCanvas().style.cursor = "");
+    });
+  </script>
 </body>
 </html>
