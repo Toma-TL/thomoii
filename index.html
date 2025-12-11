@@ -19,11 +19,24 @@
       background: rgba(0,0,0,0.6);
       color: #fff;
       padding: 6px 10px;
-      font-size: 12px;
-      border-radius: 4px;
+      font-size: 14px; /* un peu plus grand pour mobile */
+      border-radius: 6px;
       font-family: sans-serif;
       z-index: 999;
     }
+
+    /* Popup plus grande pour mobile */
+    .maplibregl-popup-content {
+      font-size: 18px !important;
+      line-height: 1.4;
+      padding: 14px !important;
+    }
+
+    .maplibregl-popup-close-button {
+      font-size: 20px !important;
+    }
+
+    strong { font-size: 20px; }
   </style>
 </head>
 <body>
@@ -51,7 +64,7 @@
       const dLat = (lat2 - lat1) * Math.PI / 180;
       const dLon = (lon2 - lon1) * Math.PI / 180;
       const a = Math.sin(dLat/2)**2 +
-                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) *
                 Math.sin(dLon/2)**2;
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
       return R * c;
@@ -63,7 +76,9 @@
       let more = true;
 
       while (more) {
-        const res = await fetch(`https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/prix-des-carburants-en-france-flux-instantane-v2/records?where=code_departement='35'&limit=100&start=${start}`);
+        const res = await fetch(
+          `https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/prix-des-carburants-en-france-flux-instantane-v2/records?where=code_departement='35'&limit=100&start=${start}`
+        );
         const data = await res.json();
         allStations = allStations.concat(data.results);
         start += 100;
@@ -73,12 +88,10 @@
     }
 
     map.on("style.load", async () => {
-
       map.addSource("raster-background", {
         type: "raster",
         tiles: ["https://api.maptiler.com/maps/dataviz-dark/{z}/{x}/{y}.png?key=xX6tlHbHqnG4ROor79FN"],
-        tileSize: 256,
-        attribution: "© Maptiler"
+        tileSize: 256
       });
 
       map.addLayer({
@@ -128,7 +141,7 @@
         type: "circle",
         source: "stations",
         paint: {
-          "circle-radius": 6,
+          "circle-radius": 10,  /* 🔥 plus gros pour mobile */
           "circle-color": [
             "interpolate",
             ["linear"],
@@ -136,23 +149,25 @@
             1.4, "#00ff00",
             2.0, "#ff0000"
           ],
-          "circle-stroke-width": 1,
+          "circle-stroke-width": 2,
           "circle-stroke-color": "#fff"
         }
       });
 
       map.on("click", "stations-points", e => {
         const p = e.features[0].properties;
-        new maplibregl.Popup()
+
+        new maplibregl.Popup({ closeButton: true })
           .setLngLat(e.lngLat)
           .setHTML(`
-            <strong>${p.name}</strong><br>${p.ville}<br>
-            Gazole: ${p.gazole ?? "N/A"} €<br>
-            SP95: ${p.sp95 ?? "N/A"} €<br>
-            E10: ${p.e10 ?? "N/A"} €<br>
-            E85: ${p.e85 ?? "N/A"} €<br>
-            SP98: ${p.sp98 ?? "N/A"} €<br>
-            GPLc: ${p.gplc ?? "N/A"} €
+            <strong>${p.name}</strong><br>
+            <span style="font-size:17px;">${p.ville}</span><br><br>
+            <b>Gazole :</b> ${p.gazole ?? "N/A"} €<br>
+            <b>SP95 :</b> ${p.sp95 ?? "N/A"} €<br>
+            <b>E10 :</b> ${p.e10 ?? "N/A"} €<br>
+            <b>E85 :</b> ${p.e85 ?? "N/A"} €<br>
+            <b>SP98 :</b> ${p.sp98 ?? "N/A"} €<br>
+            <b>GPLc :</b> ${p.gplc ?? "N/A"} €
           `)
           .addTo(map);
       });
